@@ -1,0 +1,21 @@
+{
+  "name": "am",
+  "baseURI": "http://am.example.com:8081",
+  "condition": "${find(request.uri.path, '(?:^/am(?!/XUI))')}",
+  "handler": {
+    "type": "Chain",
+    "config": {
+      "filters": [
+        {
+          "comment": "Always redirect to IG rather than AM",
+          "type": "LocationHeaderFilter",
+          "config": {
+            "baseURI": "https://platform.example.com:9443/"
+          }
+        }
+      ],
+      "capture": "all",
+      "handler": "ReverseProxyHandler"
+    }
+  }
+}
