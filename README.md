@@ -128,7 +128,7 @@ Ensure the following hostnames are resolvable (add to `/etc/hosts` if needed):
 
 1. **Clone the repository:**
    ```bash
-   git clone <repository-url>
+   git clone https://github.com/mark-nienaber/Platform8Install.git
    cd Platform8Install
    ```
 
@@ -203,18 +203,9 @@ After successful installation, access the platform components:
 
 ### Default Credentials
 
-- **Username:** `amadmin` (AM), `openidm-admin` (IDM)
+- **Username:** `amadmin`
 - **Password:** `password` (configurable in `platformconfig.env`)
 
-### Management Scripts
-
-#### Directory Services Management
-```bash
-# Start/stop DS instances
-./misc/manage-ds.sh start
-./misc/manage-ds.sh stop
-./misc/manage-ds.sh status
-```
 
 #### Component Scripts
 ```bash
@@ -269,17 +260,8 @@ The installation includes pre-configured authentication trees:
 
 To perform a clean reinstall:
 
+
 ```bash
-# Stop all services
-sudo systemctl stop tomcat
-./misc/manage-ds.sh stop
-
-# Clean installation directories
-sudo rm -rf /opt/ping/
-sudo rm -rf ~/.openamcfg/
-sudo rm -rf ~/.openig/
-sudo rm -rf ${HOME}/openam/
-
 # Restart installation
 ./install_platform8.sh
 ```
