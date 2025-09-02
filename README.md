@@ -6,7 +6,7 @@
 
 ## Overview
 
-This repository contains a comprehensive installation suite for ForgeRock's Platform 8, providing automated deployment and configuration scripts for the complete identity and access management stack. The suite orchestrates the installation of Directory Services (DS), Access Management (AM), Identity Management (IDM), Identity Gateway (IG), and Platform UI components.
+This repository contains a comprehensive installation suite for Ping Identity's Platform 8, providing automated deployment and configuration scripts for the complete identity and access management stack. The suite orchestrates the installation of Directory Services (DS), Access Management (AM), Identity Management (IDM), Identity Gateway (IG), and Platform UI components.
 
 ## Architecture Components
 
@@ -90,7 +90,7 @@ Platform8Install/
 - **Storage:** 20GB free space
 
 ### Required Software Binaries
-Place the following ForgeRock software in the `software/` directories:
+Place the following Ping Identity software in the `software/` directories:
 
 ```bash
 software/
@@ -268,7 +268,7 @@ To perform a clean reinstall:
 
 ## License
 
-This project is provided as-is for ForgeRock platform deployment automation. Refer to ForgeRock licensing for individual component usage rights.
+This project is provided as-is for Ping Identity platform deployment automation. Refer to Ping Identity licensing for individual component usage rights.
 
 ---
 
