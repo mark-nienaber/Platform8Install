@@ -134,18 +134,32 @@ Ensure the following hostnames are resolvable (add to `/etc/hosts` if needed):
 
 2. **Place software binaries** in appropriate `software/` subdirectories
 
-3. **Review configuration:**
+3. **Create administrative user:**
+   ```bash
+   # Create user specified in INSTALL_USER (default: fradmin)
+   sudo useradd -m -s /bin/bash fradmin
+   sudo usermod -aG sudo fradmin  # Add to sudo group
+   sudo su - fradmin              # Switch to administrative user
+   cd /path/to/Platform8Install
+   ```
+
+4. **Make all scripts executable:**
+   ```bash
+   find . -name "*.sh" -type f -exec chmod +x {} +
+   ```
+
+5. **Review configuration:**
    ```bash
    vim platformconfig.env
+   # Ensure INSTALL_USER matches your current user
    ```
 
-4. **Run installation:**
+6. **Run installation:**
    ```bash
-   chmod +x install_platform8.sh
-   sudo ./install_platform8.sh
+   ./install_platform8.sh
    ```
 
-5. **Select configuration mode:**
+7. **Select configuration mode:**
    - Enter `1` for File-Based Configuration (FBC) mode
    - Enter `2` for DS-based configuration mode
 
@@ -208,14 +222,28 @@ After successful installation, access the platform components:
 
 
 #### Component Scripts
+
+**⚠️ Important:** All scripts must be run from the root directory (Platform8Install/) as they depend on `platformconfig.env` and relative paths.
+
 ```bash
-# Individual component deployment
+# Individual component deployment (run from Platform8Install/ root directory)
 ./ds/ds8.sh              # Deploy DS
 ./am/am8.sh              # Deploy AM (DS mode)
 ./am/am8fbc.sh           # Deploy AM (FBC mode)
 ./idm/idm8.sh            # Deploy IDM
 ./ig/ig8.sh              # Deploy IG
 ./ui/platformui.sh       # Deploy UI
+```
+
+**Example:**
+```bash
+# Correct - from root directory
+cd Platform8Install
+./am/am8fbc.sh
+
+# Incorrect - will fail
+cd Platform8Install/am
+./am8fbc.sh  # ❌ Will fail - cannot find platformconfig.env
 ```
 
 ## Authentication Trees
