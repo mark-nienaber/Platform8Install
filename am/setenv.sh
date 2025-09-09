@@ -1,2 +1,2 @@
 #!/bin/bash
-CATALINA_OPTS="-Djavax.net.ssl.trustStore=/opt/ping/am/security/keystores/truststore -Djavax.net.ssl.trustStorePassword=changeit -Djavax.net.ssl.trustStoreType=jks"
+CATALINA_OPTS="-Djavax.net.ssl.trustStore={{AM_TRUSTSTORE}} -Djavax.net.ssl.trustStorePassword={{TRUSTSTORE_PASSWORD}} -Djavax.net.ssl.trustStoreType=jks"

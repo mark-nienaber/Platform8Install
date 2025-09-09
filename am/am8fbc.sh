@@ -14,11 +14,34 @@ set -euo pipefail
 source ./platformconfig.env  # load TOMCAT_DIR, TOMCAT_WEBAPPS_DIR, AM_WAR, AMSTER_DIR, INSTALL_AMSTER_SCRIPT, etc.
 
 # -----------------------------------------------------------------------------
+# Helper function to ensure JAVA_HOME is set for Amster operations
+# -----------------------------------------------------------------------------
+function ensure_java_home() {
+    if [[ -z "${JAVA_HOME:-}" ]]; then
+        info "JAVA_HOME not set, detecting Java installation..."
+        if command -v java >/dev/null 2>&1; then
+            export JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))
+            info "JAVA_HOME set to: $JAVA_HOME"
+        else
+            error "Java not found. Please install Java 21 first."
+            return 1
+        fi
+    fi
+    
+    # Verify JAVA_HOME is valid
+    if [[ ! -f "$JAVA_HOME/bin/java" ]]; then
+        error "Invalid JAVA_HOME: $JAVA_HOME"
+        return 1
+    fi
+}
+
+# -----------------------------------------------------------------------------
 # Simple coloured-log functions
 # -----------------------------------------------------------------------------
 function info()    { echo -e "\033[1;34m[INFO]\033[0m  $*"; }
 function success() { echo -e "\033[1;32m[✔]\033[0m     $*"; }
 function error()   { echo -e "\033[1;31m[✖]\033[0m     $*"; }
+function warning() { echo -e "\033[1;33m[⚠]\033[0m     $*"; }
 
 # ========================================
 # Function: Clear previous AM deploy
@@ -34,63 +57,308 @@ function clear_am() {
 # -----------------------------------------------------------------------------
 function deploy_amfbc_envfile(){
     info "Deploying new AM setenv.sh..."
-    cp "${AM_FBC_ENV_FILE}" "${AM_SETENV}"  && success "AM FBC sentenv.sh file is deployed to ${AM_SETENV}" || error "Failed to copy ${AM_FBC_ENV_FILE}"
+    # Substitute template variables with actual values
+    sed -e "s|{{AM_TRUSTSTORE}}|${AM_TRUSTSTORE}|g" \
+        -e "s|{{TRUSTSTORE_PASSWORD}}|${TRUSTSTORE_PASSWORD}|g" \
+        -e "s|{{DS_IDREPO_SERVER}}|${DS_IDREPO_SERVER}|g" \
+        -e "s|{{DS_IDREPO_SERVER_LDAPS_PORT}}|${DS_IDREPO_SERVER_LDAPS_PORT}|g" \
+        -e "s|{{DS_IDREPO_DN}}|${DS_IDREPO_DN}|g" \
+        -e "s|{{DS_AMCONFIG_SERVER}}|${DS_AMCONFIG_SERVER}|g" \
+        -e "s|{{DS_AMCONFIG_SERVER_LDAPS_PORT}}|${DS_AMCONFIG_SERVER_LDAPS_PORT}|g" \
+        -e "s|{{DS_CTS_SERVER}}|${DS_CTS_SERVER}|g" \
+        -e "s|{{DS_CTS_SERVER_LDAPS_PORT}}|${DS_CTS_SERVER_LDAPS_PORT}|g" \
+        -e "s|{{DEFAULT_PASSWORD}}|${DEFAULT_PASSWORD}|g" \
+        "${AM_FBC_ENV_FILE}" > "${AM_SETENV}" \
+        && success "AM FBC setenv.sh file is deployed to ${AM_SETENV}" \
+        || error "Failed to copy ${AM_FBC_ENV_FILE}"
 
     success "AM deployment delay complete."
 }
 
 # -----------------------------------------------------------------------------
+# Function: initialize_fbc_directory
+# Description: Initialize FBC directory structure before AM deployment
+# -----------------------------------------------------------------------------
+function initialize_fbc_directory() {
+    info "Initializing FBC directory structure..."
+    
+    # Create FBC home directory
+    mkdir -p "$AM_FBC"
+    
+    # Create required subdirectories
+    local required_dirs=(
+        "security"
+        "security/keys"
+        "security/keys/amster"
+        "security/keystores"
+        "config"
+        "var"
+        "var/audit"
+        "var/debug"
+        "var/stats"
+    )
+    
+    for dir in "${required_dirs[@]}"; do
+        mkdir -p "$AM_FBC/$dir"
+        info "DEBUG: Created FBC directory: $AM_FBC/$dir"
+    done
+    
+    # Set appropriate permissions
+    chmod -R 700 "$AM_FBC/security"
+    
+    success "FBC directory structure initialized"
+}
+
+# -----------------------------------------------------------------------------
 # Function: deploy_amster_keys
-# Description: Recursively copy the entire “keys” directory into ${AM_FBC}
+# Description: Deploy Amster keys with proper validation and permissions
 # -----------------------------------------------------------------------------
 function deploy_amster_keys() {
-    info "Deploying Amster Keys – copying entire keys directory to ${AM_FBC}/"
-    if cp -r "${SCRIPT_DIR}/misc/keys" "${AM_FBC}/security/"; then
-        success "✔ Directory 'keys' copied to ${AM_FBC}/security/keys"
-    else
-        error "✖ Failed to copy 'keys' directory to ${AM_FBC}/"
+    info "Deploying Amster keys for FBC..."
+    
+    local keys_source="${SCRIPT_DIR}/misc/keys"
+    local keys_dest="$AM_FBC/security"
+    
+    # Validate source keys exist
+    if [[ ! -d "$keys_source" ]]; then
+        error "Keys source directory not found: $keys_source"
         return 1
     fi
-    success "Amster key deployment complete."
+    
+    # Check for required key files
+    local required_keys=(
+        "amster/amster_rsa"
+        "amster/amster_rsa.pub"
+    )
+    
+    for key in "${required_keys[@]}"; do
+        if [[ ! -f "$keys_source/$key" ]]; then
+            error "Required key not found: $keys_source/$key"
+            return 1
+        fi
+    done
+    
+    # Copy keys directory
+    if ! cp -r "$keys_source" "$keys_dest/"; then
+        error "Failed to copy keys directory"
+        return 1
+    fi
+    
+    # Set proper permissions for security
+    chmod -R 600 "$keys_dest/keys/amster/"*
+    chmod 700 "$keys_dest/keys/amster"
+    
+    # Verify keys are accessible
+    if [[ ! -r "$AM_FBC/security/keys/amster/amster_rsa" ]]; then
+        error "Amster private key not readable after deployment"
+        return 1
+    fi
+    
+    success "Amster keys deployed and secured"
 }
 
 # -----------------------------------------------------------------------------
 # Function: deploy_amfbc
 # Description: Deploy the new AM WAR and display deployment status
 # -----------------------------------------------------------------------------
+
 function deploy_amfbc() {
-    info "Deploying new AM WAR to ${TOMCAT_WEBAPPS_DIR}/${AM_CONTEXT}.war"
-    if cp "${AM_WAR}" "${TOMCAT_WEBAPPS_DIR}/${AM_CONTEXT}.war"; then
-        success "✔ New AM WAR copied to webapps"
-    else
-        error "✖ Failed to copy AM WAR"
+    info "Deploying AM WAR for FBC..."
+    
+    INSTALLATION_STATE="AM_DEPLOYMENT"
+    
+    # Copy WAR file
+    if ! cp "$AM_WAR" "${TOMCAT_WEBAPPS_DIR}/${AM_CONTEXT}.war"; then
+        error "Failed to copy AM WAR"
+        return 1
     fi
-
-    info "Waiting for AM to start deploying (20 seconds)…"
-    sleep 20
-    success "AM deployment wait complete"
-
-    info "Current WARs in Tomcat (${TOMCAT_WEBAPPS_DIR}):"
-    ls -lart "${TOMCAT_WEBAPPS_DIR}/"
-
-    info "FBC Config contents (${AM_FBC}):"
-    ls -lart "${AM_FBC}/"
+    
+    success "AM WAR copied to webapps"
+    
+    # Monitor deployment
+    info "Monitoring AM deployment..."
+    local max_wait=120
+    local count=0
+    
+    while [[ $count -lt $max_wait ]]; do
+        # Check if WAR is unpacked
+        if [[ -d "${TOMCAT_WEBAPPS_DIR}/am/WEB-INF" ]]; then
+            # Check if FBC initialization has started
+            if [[ -f "$AM_FBC/.version" ]] || [[ -f "$AM_FBC/config/boot.json" ]]; then
+                success "AM deployed with FBC initialization"
+                FBC_CONFIGURED=true
+                return 0
+            fi
+            
+            # Check Tomcat logs for FBC initialization
+            if [[ -f "$TOMCAT_DIR/logs/catalina.out" ]]; then
+                if tail -100 "$TOMCAT_DIR/logs/catalina.out" | grep -q "File based configuration found"; then
+                    info "FBC initialization detected"
+                fi
+            fi
+        fi
+        
+        sleep 5
+        ((count+=5))
+        
+        if [[ $((count % 20)) -eq 0 ]]; then
+            info "Waiting for deployment... ($count/$max_wait seconds)"
+        fi
+    done
+    
+    if [[ ! -d "${TOMCAT_WEBAPPS_DIR}/am/WEB-INF" ]]; then
+        error "AM WAR failed to deploy"
+        return 1
+    fi
+    
+    warning "AM deployed but FBC may not be fully initialized"
+    
+    INSTALLATION_STATE="FBC_DEPLOYED"
 }
-
 # ==================================================================================
 # Function: setup_amster
-# Purpose:  Unzip the Amster tooling from ${AMSTER_ZIP} into ${AMSTER_DIR}
+# Purpose:  Setup Amster with validation and FBC readiness checks
 # ==================================================================================
 function setup_amster() {
-    info "Preparing Amster directory at ${AMSTER_DIR}…"
+    info "Setting up Amster..."
+    
+    info "DEBUG: Amster setup environment check:"
+    info "DEBUG: AMSTER_ZIP=$AMSTER_ZIP"
+    info "DEBUG: AMSTER_SOFTWARE_DIR=$AMSTER_SOFTWARE_DIR"
+    info "DEBUG: AMSTER_DIR=$AMSTER_DIR"
+    info "DEBUG: AM_FBC=$AM_FBC"
+    
+    # Ensure JAVA_HOME is set for Amster
+    info "DEBUG: Ensuring JAVA_HOME is set..."
+    ensure_java_home || return 1
+    info "DEBUG: JAVA_HOME verified: $JAVA_HOME"
+    
+    # Check if AMSTER_ZIP exists
+    if [[ -f "$AMSTER_ZIP" ]]; then
+        success "DEBUG: Amster ZIP file found at $AMSTER_ZIP"
+        info "DEBUG: Amster ZIP file size: $(ls -lh "$AMSTER_ZIP" | awk '{print $5}')"
+    else
+        error "DEBUG: Amster ZIP file not found at $AMSTER_ZIP"
+        return 1
+    fi
+    
+    # Remove old Amster directory
+    info "DEBUG: Removing old Amster directory..."
+    rm -rf "${AMSTER_DIR}"
+    
+    # Wait for FBC to be ready
+    local FBC_CONFIGURED=false
+    if [[ ! "$FBC_CONFIGURED" == "true" ]]; then
+        info "Waiting for FBC initialization to complete..."
+        info "DEBUG: Checking for FBC boot.json file at: $AM_FBC/config/boot.json"
+        
+        local wait_count=0
+        while [[ $wait_count -lt 60 ]]; do
+            if [[ -f "$AM_FBC/config/boot.json" ]]; then
+                FBC_CONFIGURED=true
+                success "DEBUG: FBC boot.json found"
+                break
+            fi
+            info "DEBUG: FBC boot.json not found, waiting... (${wait_count}s elapsed)"
+            sleep 2
+            ((wait_count+=2))
+        done
+        
+        if [[ ! "$FBC_CONFIGURED" == "true" ]]; then
+            warning "FBC may not be fully initialized"
+            info "DEBUG: Final FBC directory check:"
+            ls -la "$AM_FBC/" 2>/dev/null || warning "DEBUG: Cannot list AM_FBC directory"
+            ls -la "$AM_FBC/config/" 2>/dev/null || warning "DEBUG: Cannot list AM_FBC/config directory"
+        fi
+    fi
+    
+    # Unpack Amster
+    info "DEBUG: Unpacking Amster from $AMSTER_ZIP to $AMSTER_SOFTWARE_DIR"
+    if ! unzip -q -o "$AMSTER_ZIP" -d "$AMSTER_SOFTWARE_DIR"; then
+        error "Failed to unzip Amster"
+        error "DEBUG: Unzip command failed, checking directory permissions:"
+        ls -la "$AMSTER_SOFTWARE_DIR" || error "DEBUG: Cannot access AMSTER_SOFTWARE_DIR"
+        return 1
+    fi
+    success "DEBUG: Amster unpacked successfully"
+    
+    # Verify Amster executable
+    info "DEBUG: Checking Amster executable at ${AMSTER_DIR}/amster"
+    if [[ ! -x "${AMSTER_DIR}/amster" ]]; then
+        error "Amster executable not found or not executable"
+        error "DEBUG: Amster directory contents:"
+        ls -la "${AMSTER_DIR}/" || error "DEBUG: Cannot list AMSTER_DIR"
+        return 1
+    fi
+    success "DEBUG: Amster executable found and is executable"
+    
+    # Test Amster with basic functionality
+    info "DEBUG: Testing Amster basic functionality..."
+    if ! "${AMSTER_DIR}/amster" --version >/dev/null 2>&1; then
+        error "Amster failed basic functionality test"
+        error "DEBUG: Running amster --version with full output:"
+        "${AMSTER_DIR}/amster" --version || true
+        return 1
+    fi
+    success "DEBUG: Amster basic functionality test passed"
+    
+    success "Amster setup completed"
+}
 
-    info "Unpacking Amster from ${AMSTER_ZIP} to ${AMSTER_SOFTWARE_DIR}…"
-    unzip -q -o "${AMSTER_ZIP}" -d "${AMSTER_SOFTWARE_DIR}" \
-        && success "Amster unpacked to ${AMSTER_DIR}" \
-        || error "Failed to unzip Amster from ${AMSTER_ZIP}"
-
-    info "Sleeping for 20 seconds to allow FBC to be be deployed before running amster..."
-    sleep 20
+# -----------------------------------------------------------------------------
+# Enhanced Amster command wrapper with error filtering
+# -----------------------------------------------------------------------------
+function run_amster_fbc_command() {
+    local command=$1
+    local description=$2
+    
+    info "Executing: $description"
+    
+    # Ensure JAVA_HOME is set for Amster
+    ensure_java_home || return 1
+    
+    # Create temporary log file
+    local amster_log="/tmp/amster-fbc-output-$$.log"
+    
+    # Clear previous log
+    > "$amster_log"
+    
+    # Run Amster command
+    if echo "$command" | "${AMSTER_DIR}/amster" > "$amster_log" 2>&1; then
+        # Check for errors in output, but ignore common harmless warnings
+        if grep -qi "error\|failed\|exception" "$amster_log"; then
+            # Filter out harmless warnings
+            local filtered_errors=$(grep -i "error\|failed\|exception" "$amster_log" | \
+                                   grep -v "ansi will be disabled" | \
+                                   grep -v "Could not load library" | \
+                                   grep -v "jansi" | \
+                                   grep -v "libjansi")
+            
+            if [[ -n "$filtered_errors" ]]; then
+                # Some errors are expected (like realm already exists)
+                if echo "$filtered_errors" | grep -qi "already exists"; then
+                    warning "$description - resource already exists"
+                    rm -f "$amster_log"
+                    return 0
+                else
+                    error "$description reported errors:"
+                    echo "$filtered_errors" | head -10
+                    rm -f "$amster_log"
+                    return 1
+                fi
+            fi
+        fi
+        
+        success "$description completed successfully"
+        rm -f "$amster_log"
+        return 0
+    else
+        error "$description failed"
+        info "DEBUG: Full amster output:"
+        cat "$amster_log"
+        rm -f "$amster_log"
+        return 1
+    fi
 }
 
 # ========================================
@@ -102,64 +370,136 @@ function restart_am() {
     start_tomcat
 }
 
-# ========================================
-# Function: stop_tomcat
-# Description: Stop Tomcat via systemd, then kill any stragglers
-# ========================================
+# -----------------------------------------------------------------------------
+# Tomcat management functions
+# -----------------------------------------------------------------------------
 function stop_tomcat() {
-    info "Stopping Tomcat via systemctl..."
-    if sudo systemctl stop tomcat; then
-        success "Tomcat stopped via systemctl."
-    else
-        warning "systemctl stop tomcat failed; will attempt to kill processes."
-    fi
-    sleep 5
-
-    info "Checking for any remaining Tomcat processes..."
-    local pids
-    pids=$(ps -ef | grep '[t]omcat' | awk '{print $2}') || pids=""
-    if [[ -n "$pids" ]]; then
-        info "Killing stray Tomcat processes: $pids"
-        if kill -9 $pids; then
-            success "Straggler Tomcat processes terminated."
+    info "Stopping Tomcat..."
+    
+    # Try systemctl first
+    if systemctl is-enabled tomcat >/dev/null 2>&1; then
+        if sudo systemctl stop tomcat; then
+            success "Tomcat stopped via systemctl"
         else
-            error "Failed to kill some Tomcat processes: $pids"
+            warning "systemctl stop failed"
         fi
-    else
-        success "No leftover Tomcat processes found."
     fi
-
-    info "Tomcat shutdown procedure complete."
+    
+    # Try shutdown script
+    if [[ -x "$TOMCAT_BIN_DIR/shutdown.sh" ]]; then
+        "$TOMCAT_BIN_DIR/shutdown.sh" 2>/dev/null || true
+    fi
+    
+    # Wait for shutdown
+    local count=0
+    while [[ $count -lt 30 ]] && pgrep -f "catalina.*start" >/dev/null 2>&1; do
+        sleep 1
+        ((count++))
+    done
+    
+    # Force kill if still running
+    if pgrep -f "catalina.*start" >/dev/null 2>&1; then
+        warning "Force killing Tomcat processes..."
+        pkill -9 -f "catalina.*start" 2>/dev/null || true
+        sleep 2
+    fi
+    
+    success "Tomcat stopped"
 }
 
-# ========================================
-# Function: start_tomcat
-# Description: Start Tomcat via systemd and wait up to ~35 seconds for it to come online
-# ========================================
 function start_tomcat() {
-    info "Starting Tomcat via systemctl..."
-    if sudo systemctl start tomcat; then
-        success "systemctl start tomcat invoked."
-    else
-        error "systemctl start tomcat failed."
-        return 1
+    info "Starting Tomcat..."
+    
+    # Ensure it's not already running
+    if pgrep -f "catalina.*start" >/dev/null 2>&1; then
+        warning "Tomcat is already running"
+        return 0
     fi
-
-    # Initial wait before checking
-    sleep 10
-
-    local retries=5
-    for i in $(seq 1 $retries); do
-        if netstat -tuln | grep -q ":${TOMCAT_HTTP_PORT}"; then
-            success "Tomcat is listening on port ${TOMCAT_HTTP_PORT}."
-            return 0
+    
+    # Start Tomcat
+    if systemctl is-enabled tomcat >/dev/null 2>&1; then
+        if sudo systemctl start tomcat; then
+            success "Tomcat started via systemctl"
         else
-            warning "Tomcat not started yet, waiting 5 more seconds (attempt ${i}/${retries})..."
-            sleep 5
+            error "systemctl start failed"
+            return 1
+        fi
+    else
+        if [[ -x "$TOMCAT_BIN_DIR/startup.sh" ]]; then
+            "$TOMCAT_BIN_DIR/startup.sh"
+        else
+            error "No Tomcat startup method available"
+            return 1
+        fi
+    fi
+    
+    # Wait for Tomcat to be ready
+    info "Waiting for Tomcat to be ready..."
+    local count=0
+    while [[ $count -lt 60 ]]; do
+        if netstat -tuln 2>/dev/null | grep -q ":${TOMCAT_HTTP_PORT} "; then
+            if curl -s -o /dev/null "http://localhost:${TOMCAT_HTTP_PORT}" 2>/dev/null; then
+                success "Tomcat is ready"
+                return 0
+            fi
+        fi
+        sleep 2
+        ((count+=2))
+    done
+    
+    error "Tomcat failed to start properly"
+    return 1
+}
+
+# -----------------------------------------------------------------------------
+# Wait for AM with FBC to be ready
+# -----------------------------------------------------------------------------
+function wait_for_am_ready() {
+    info "Waiting for AM with FBC to be ready..."
+    
+    local max_attempts=60
+    local attempt=0
+    
+    while [[ $attempt -lt $max_attempts ]]; do
+        # Check basic connectivity
+        local status=$(curl -s -o /dev/null -w "%{http_code}" "$AM_URL/json/serverinfo/*" 2>/dev/null || echo "000")
+        
+        if [[ "$status" == "200" ]]; then
+            # Check for basic FBC initialization - more lenient approach
+            if [[ -d "$AM_FBC/config" ]] && [[ -f "$AM_FBC/config/boot.json" ]]; then
+                success "AM with FBC is ready for Amster operations"
+                return 0
+            elif [[ -d "$AM_FBC/config/services" ]]; then
+                # If services directory exists, FBC is probably ready enough
+                success "AM with FBC services initialized - proceeding"
+                return 0
+            else
+                info "AM responding but FBC initialization ongoing..."
+            fi
+        elif [[ "$status" == "302" ]]; then
+            info "AM redirecting (configuration needed)..."
+        else
+            info "AM not responding yet (HTTP $status)..."
+        fi
+        
+        ((attempt++))
+        sleep 5
+        
+        if [[ $((attempt % 12)) -eq 0 ]]; then
+            info "Still waiting... (attempt $attempt/$max_attempts)"
+            
+            # After 2 minutes, be more lenient
+            if [[ $attempt -gt 24 ]]; then
+                info "Extended wait - checking if AM is at least responding..."
+                if [[ "$status" == "200" ]] || [[ "$status" == "302" ]]; then
+                    warning "AM responding but FBC not fully initialized - proceeding anyway"
+                    return 0
+                fi
+            fi
         fi
     done
-
-    error "Tomcat failed to start after $((10 + retries*5)) seconds."
+    
+    error "AM failed to initialize after $((max_attempts * 5)) seconds"
     return 1
 }
 
@@ -167,50 +507,72 @@ function start_tomcat() {
 # Function: Create Alpha Realm
 # ========================================
 function create_alpha_realm() {
-    info "Starting creation of Alpha realm..."
-
-    "${AMSTER_DIR}/amster" <<EOF
-connect -k ${AM_FBC}/security/keys/amster/amster_rsa ${AM_URL}
-create Realms --global --body '{"_id": "L2FscGhh", "parentPath": "/", "active": true, "name": "alpha", "aliases": []}'
-:exit
-EOF
-
-    if [ $? -eq 0 ]; then
-        success "Alpha realm creation complete."
+    info "Creating Alpha realm..."
+    
+    # Pre-flight debug checks (keeping some key validation)
+    info "DEBUG: Pre-amster environment check:"
+    info "DEBUG: JAVA_HOME=$JAVA_HOME"
+    info "DEBUG: AM_URL=$AM_URL"
+    info "DEBUG: AM_FBC=$AM_FBC"
+    info "DEBUG: AMSTER_DIR=$AMSTER_DIR"
+    
+    local key_file="${AM_FBC}/security/keys/amster/amster_rsa"
+    if [[ -f "$key_file" ]]; then
+        success "DEBUG: Amster key file found at $key_file"
+        info "DEBUG: Key file permissions: $(stat -c '%a' "$key_file" 2>/dev/null || stat -f '%A' "$key_file")"
     else
-        error "Alpha realm creation failed; check Amster output."
+        error "DEBUG: Amster key file not found at $key_file"
+        return 1
     fi
+    
+    # Use enhanced wrapper for amster commands
+    local amster_script="connect -k ${AM_FBC}/security/keys/amster/amster_rsa ${AM_URL}
+create Realms --global --body '{\"_id\": \"L2FscGhh\", \"parentPath\": \"/\", \"active\": true, \"name\": \"alpha\", \"aliases\": []}'
+:exit"
+
+    run_amster_fbc_command "$amster_script" "Alpha realm creation"
 }
 
 # ========================================
 # Function: Import sample journeys
 # ========================================
 function import_journeys() {
-    info "Starting Amster Import of Journeys located ${AM_JOURNEYS_DIR}"
-
-    "${AMSTER_DIR}/amster" <<EOF
-connect -k ${AM_FBC}/security/keys/amster/amster_rsa ${AM_URL}
-import-config --path ${AM_JOURNEYS_DIR}
-:exit
-EOF
-
-    if [ $? -eq 0 ]; then
-        success "Journey Import complete."
-    else
-        error "Journey Import failed; check Amster output."
+    info "Importing authentication journeys..."
+    
+    info "DEBUG: Journey import pre-checks:"
+    info "DEBUG: AM_JOURNEYS_DIR=$AM_JOURNEYS_DIR"
+    
+    # Check if journey directory exists
+    if [[ ! -d "$AM_JOURNEYS_DIR" ]]; then
+        warning "Journey directory not found: $AM_JOURNEYS_DIR"
+        return 0
     fi
+    
+    success "DEBUG: Journeys directory found at $AM_JOURNEYS_DIR"
+    info "DEBUG: Journeys directory contents:"
+    ls -la "$AM_JOURNEYS_DIR" | head -10 || warning "DEBUG: Cannot list journeys directory"
+    
+    # Use enhanced wrapper for amster commands
+    local amster_script="connect -k ${AM_FBC}/security/keys/amster/amster_rsa ${AM_URL}
+import-config --path ${AM_JOURNEYS_DIR}
+:exit"
+
+    run_amster_fbc_command "$amster_script" "Journey import"
 }
 
 # ==========================
 # Main execution sequence
 # ==========================
+ensure_java_home
 stop_tomcat
 clear_am
 deploy_amfbc_envfile
+initialize_fbc_directory
+deploy_amster_keys
 start_tomcat
 deploy_amfbc
-deploy_amster_keys
 restart_am
+wait_for_am_ready
 setup_amster
 create_alpha_realm
 import_journeys

@@ -131,7 +131,7 @@ function start_idm() {
     info "Running startup.sh &"
     ./startup.sh &
     sleep 20
-    local logf="${IDM_LOGS_DIR}/idm0.log"
+    local logf="${IDM_LOGS_DIR}/openidm0.log"
     if [ -f "$logf" ]; then
         info "Displaying last 50 lines of IDM log"
         tail -n 50 "$logf"

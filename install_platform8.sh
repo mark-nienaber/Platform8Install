@@ -19,6 +19,7 @@ source ./platformconfig.env
 function info()    { echo -e "\033[1;34m[INFO]\033[0m  $*"; }
 function success() { echo -e "\033[1;32m[✔]\033[0m     $*"; }
 function error()   { echo -e "\033[1;31m[✖]\033[0m     $*"; }
+function warning() { echo -e "\033[1;33m[⚠]\033[0m     $*"; }
 
 # -----------------------------------------------------------------------------
 # Function: stop_idm_if_running

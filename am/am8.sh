@@ -14,18 +14,41 @@ set -euo pipefail
 source ./platformconfig.env  # load TOMCAT_DIR, TOMCAT_WEBAPPS_DIR, AM_WAR, AMSTER_DIR, INSTALL_AMSTER_SCRIPT, etc.
 
 # -----------------------------------------------------------------------------
+# Helper function to ensure JAVA_HOME is set for Amster operations
+# -----------------------------------------------------------------------------
+function ensure_java_home() {
+    if [[ -z "${JAVA_HOME:-}" ]]; then
+        info "JAVA_HOME not set, detecting Java installation..."
+        if command -v java >/dev/null 2>&1; then
+            export JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))
+            info "JAVA_HOME set to: $JAVA_HOME"
+        else
+            error "Java not found. Please install Java 21 first."
+            return 1
+        fi
+    fi
+    
+    # Verify JAVA_HOME is valid
+    if [[ ! -f "$JAVA_HOME/bin/java" ]]; then
+        error "Invalid JAVA_HOME: $JAVA_HOME"
+        return 1
+    fi
+}
+
+# -----------------------------------------------------------------------------
 # Simple coloured-log functions
 # -----------------------------------------------------------------------------
 function info()    { echo -e "\033[1;34m[INFO]\033[0m  $*"; }
 function success() { echo -e "\033[1;32m[✔]\033[0m     $*"; }
 function error()   { echo -e "\033[1;31m[✖]\033[0m     $*"; }
+function warning() { echo -e "\033[1;33m[⚠]\033[0m     $*"; }
 
 # ========================================
 # Function: Ensure Tomcat is running
 # ========================================
 function start_tomcat_if_not_running() {
     info "Checking if Tomcat is running on port ${TOMCAT_HTTP_PORT}..."
-    if netstat -tuln | grep -q ":${TOMCAT_HTTP_PORT}"; then
+    if netstat -tuln | grep -q "${TOMCAT_HTTP_PORT}.*LISTEN"; then
         success "Tomcat is already running on port ${TOMCAT_HTTP_PORT}."
     else
         info "Tomcat is not running. Starting Tomcat..."
@@ -52,7 +75,7 @@ function clear_am() {
     ls -lart "${TOMCAT_WEBAPPS_DIR}/"
 
     info "Verifying Tomcat listening on port ${TOMCAT_HTTP_PORT}..."
-    if netstat -na | grep -q ":${TOMCAT_HTTP_PORT}"; then
+    if netstat -tuln | grep -q "${TOMCAT_HTTP_PORT}.*LISTEN"; then
         success "Tomcat is listening on port ${TOMCAT_HTTP_PORT}."
     else
         error "Tomcat is not listening on port ${TOMCAT_HTTP_PORT}."
@@ -175,20 +198,20 @@ function start_tomcat() {
     fi
 
     # Initial wait before checking
-    sleep 10
+    sleep 15
 
-    local retries=5
+    local retries=12
     for i in $(seq 1 $retries); do
-        if netstat -tuln | grep -q ":${TOMCAT_HTTP_PORT}"; then
+        if netstat -tuln | grep -q "${TOMCAT_HTTP_PORT}.*LISTEN"; then
             success "Tomcat is listening on port ${TOMCAT_HTTP_PORT}."
             return 0
         else
-            warning "Tomcat not started yet, waiting 5 more seconds (attempt ${i}/${retries})..."
-            sleep 5
+            warning "Tomcat not started yet, waiting 10 more seconds (attempt ${i}/${retries})..."
+            sleep 10
         fi
     done
 
-    error "Tomcat failed to start after $((10 + retries*5)) seconds."
+    error "Tomcat failed to start after $((20 + retries*10)) seconds."
     return 1
 }
 
@@ -236,7 +259,12 @@ EOF
 function deploy_am_envfile(){
 
     info "Deploying new AM setenv.sh..."
-    cp "${AM_ENV_FILE}" "${AM_SETENV}"  && success "AM sentenv.sh file is deployed to ${AM_SETENV}" || error "Failed to copy ${AM_ENV_FILE}"
+    # Substitute template variables with actual values
+    sed -e "s|{{AM_TRUSTSTORE}}|${AM_TRUSTSTORE}|g" \
+        -e "s|{{TRUSTSTORE_PASSWORD}}|${TRUSTSTORE_PASSWORD}|g" \
+        "${AM_ENV_FILE}" > "${AM_SETENV}" \
+        && success "AM setenv.sh file is deployed to ${AM_SETENV}" \
+        || error "Failed to copy ${AM_ENV_FILE}"
 
     success "AM deployment delay complete."
 }
@@ -244,6 +272,7 @@ function deploy_am_envfile(){
 # ==========================
 # Main execution sequence
 # ==========================
+ensure_java_home
 stop_tomcat
 deploy_am_envfile
 start_tomcat

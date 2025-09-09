@@ -165,20 +165,20 @@ function start_tomcat() {
   fi
 
   # Initial wait before checking
-  sleep 10
+  sleep 20
 
-  local retries=5
+  local retries=12
   for i in $(seq 1 $retries); do
-    if netstat -tuln | grep -q ":${TOMCAT_HTTP_PORT}"; then
+    if netstat -tuln | grep -q "${TOMCAT_HTTP_PORT}.*LISTEN"; then
       success "Tomcat is listening on port ${TOMCAT_HTTP_PORT}."
       return 0
     else
-      warning "Tomcat not started yet, waiting 5 more seconds (attempt ${i}/${retries})..."
-      sleep 5
+      warning "Tomcat not started yet, waiting 10 more seconds (attempt ${i}/${retries})..."
+      sleep 10
     fi
   done
 
-  error "Tomcat failed to start after $((10 + retries*5)) seconds."
+  error "Tomcat failed to start after $((20 + retries*10)) seconds."
   return 1
 }
 

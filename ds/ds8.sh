@@ -192,7 +192,7 @@ function test_ldap_secure_bind() {
         info "→ Testing ${label} Store"
         if "${DS_DIR}/${label,,}/opendj/bin/ldapsearch" -h "$host" -p "$port" -D "$bindDN" -w "$PASSWORD" -b "$base" -Z --trustStorePath "$AM_TRUSTSTORE" "objectclass=*" dn >/dev/null 2>&1; then
             success "${label} LDAP bind succeeded with: "
-            success ${DS_DIR}/${label,,}/opendj/bin/ldapsearch" -h "$host" -p "$port" -D "$bindDN" -w "$PASSWORD" -b "$base" -Z --trustStorePath "$AM_TRUSTSTORE" "objectclass=*" dn"
+            success "${DS_DIR}/${label,,}/opendj/bin/ldapsearch -h $host -p $port -D $bindDN -w xxxx -b $base -Z --trustStorePath $AM_TRUSTSTORE objectclass=* dn"
         else
             error "${label} LDAP bind FAILED"
         fi

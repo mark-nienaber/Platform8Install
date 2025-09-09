@@ -8,6 +8,24 @@ TARBALL_URL="https://downloads.apache.org/tomcat/tomcat-10/v${TOMCAT_VERSION}/bi
 TOMCAT_USER=fradmin
 TOMCAT_GROUP=fradmin
 
+# Detect JAVA_HOME
+if [[ -z "${JAVA_HOME:-}" ]]; then
+    echo "Detecting Java installation..."
+    if command -v java >/dev/null 2>&1; then
+        JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))
+        echo "JAVA_HOME detected as: $JAVA_HOME"
+    else
+        echo "Error: Java not found. Please install Java 21 first."
+        exit 1
+    fi
+fi
+
+# Verify JAVA_HOME is valid
+if [[ ! -f "$JAVA_HOME/bin/java" ]]; then
+    echo "Error: Invalid JAVA_HOME: $JAVA_HOME"
+    exit 1
+fi
+
 echo "Stopping and disabling existing Tomcat service (if present)..."
 sudo systemctl stop tomcat || true
 sudo systemctl disable tomcat || true
@@ -46,7 +64,7 @@ Type=forking
 User=$TOMCAT_USER
 Group=$TOMCAT_GROUP
 
-Environment="JAVA_HOME=/usr/lib/jvm/java-21-openjdk"
+Environment="JAVA_HOME=$JAVA_HOME"
 Environment="CATALINA_PID=$INSTALL_DIR/temp/tomcat.pid"
 Environment="CATALINA_HOME=$INSTALL_DIR"
 Environment="CATALINA_BASE=$INSTALL_DIR"
