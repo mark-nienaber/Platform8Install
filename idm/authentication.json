@@ -2,7 +2,7 @@
     "rsFilter" : {
         "clientId" : "idm-resource-server",
         "clientSecret" : "&{rs.client.secret|password}",
-        "tokenIntrospectUrl" : "http://am.example.com:8081/am/oauth2/introspect",
+        "tokenIntrospectUrl" : "{{AM_URL}}/oauth2/introspect",
         "scopes" : [
             "fr:idm:*"
         ],

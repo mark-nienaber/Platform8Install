@@ -15,14 +15,14 @@
             "heartBeatTimeoutMilliSeconds" : 10000,
             "primaryLdapServers" : [
                 {
-                    "hostname" : "idrepo1.example.com",
-                    "port" : 2389
+                    "hostname" : "{{DS_IDREPO_SERVER}}",
+                    "port" : {{DS_IDREPO_SERVER_LDAP_PORT}}
                 }
             ],
             "secondaryLdapServers" : [
                 {
-                    "hostname" : "idrepo1.example.com",
-                    "port" : 2389
+                    "hostname" : "{{DS_IDREPO_SERVER}}",
+                    "port" : {{DS_IDREPO_SERVER_LDAP_PORT}}
                 }
             ]
         },
@@ -30,8 +30,8 @@
             "inheritFrom" : "bind",
             "authentication" : {
                 "simple" : {
-                    "bindDn" : "cn=Directory Manager",
-                    "bindPassword" : "password"
+                    "bindDn" : "{{DS_ADMIN_DN}}",
+                    "bindPassword" : "{{LDAP_BIND_PASSWORD}}"
                     }
 
                 }

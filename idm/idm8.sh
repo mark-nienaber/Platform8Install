@@ -106,20 +106,68 @@ function configure_idm() {
 }
 
 # ========================================
-# Function: Copy IDM configuration files
+# Function: Copy IDM configuration files with variable substitution
 # ========================================
 function copy_idm_config_files() {
-    info "Copying IDM configuration files..."
+    info "Copying IDM configuration files with variable substitution..."
     local src_dir="${SCRIPT_DIR}/idm"
     if [ ! -d "$src_dir" ]; then
         error "Config source directory not found: $src_dir"
         return 1
     fi
+    
+    # Process JSON files
     for file in "$src_dir"/*.json; do
         [ -f "$file" ] || continue
-        cp "$file" "${IDM_CONFIG_DIR}/" && info "Copied $(basename "$file")" || error "Failed to copy $(basename "$file")"
+        local filename=$(basename "$file")
+        local dest_file="${IDM_CONFIG_DIR}/${filename}"
+        
+        info "Processing JSON file: $filename with variable substitution..."
+        
+        # Apply variable substitution and copy to destination
+        sed -e "s|{{IG_HOSTNAME}}|${IG_HOSTNAME}|g" \
+            -e "s|{{IG_HTTPS_PORT}}|${IG_HTTPS_PORT}|g" \
+            -e "s|{{AM_CONTEXT}}|${AM_CONTEXT}|g" \
+            -e "s|{{AM_URL}}|${AM_URL}|g" \
+            -e "s|{{DS_IDREPO_SERVER}}|${DS_IDREPO_SERVER}|g" \
+            -e "s|{{DS_IDREPO_SERVER_LDAP_PORT}}|${DS_IDREPO_SERVER_LDAP_PORT}|g" \
+            -e "s|{{DS_ADMIN_DN}}|${DS_ADMIN_DN}|g" \
+            -e "s|{{LDAP_BIND_PASSWORD}}|${LDAP_BIND_PASSWORD}|g" \
+            "$file" > "$dest_file"
+        
+        if [ $? -eq 0 ]; then
+            success "Processed and copied $filename"
+        else
+            error "Failed to process $filename"
+            return 1
+        fi
     done
-    success "All IDM config files copied"
+    
+    # Process boot.properties file if it exists
+    local boot_props_src="${src_dir}/resolver/boot.properties"
+    if [[ -f "$boot_props_src" ]]; then
+        local boot_props_dest="${IDM_EXTRACT_DIR}/resolver/boot.properties"
+        info "Processing boot.properties with variable substitution..."
+        
+        # Create resolver directory if it doesn't exist
+        mkdir -p "$(dirname "$boot_props_dest")"
+        
+        # Apply variable substitution to boot.properties
+        sed -e "s|{{BOOT_PORT_HTTP}}|${BOOT_PORT_HTTP}|g" \
+            -e "s|{{BOOT_PORT_HTTPS}}|${BOOT_PORT_HTTPS}|g" \
+            -e "s|{{BOOT_PORT_MUTUALAUTH}}|${BOOT_PORT_MUTUALAUTH}|g" \
+            -e "s|{{BOOT_HOST}}|${BOOT_HOST}|g" \
+            "$boot_props_src" > "$boot_props_dest"
+        
+        if [ $? -eq 0 ]; then
+            success "Processed and copied boot.properties"
+        else
+            error "Failed to process boot.properties"
+            return 1
+        fi
+    fi
+    
+    success "All IDM config files processed and copied"
 }
 
 # ========================================
