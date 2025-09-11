@@ -1,7 +1,7 @@
 {
     "name": "platform-ui",
     "condition": "${find(request.uri.path, '^/platform-ui')}",
-    "baseURI": "http://am.example.com:8081",
+    "baseURI": "http://{{AM_HOSTNAME}}:{{TOMCAT_HTTP_PORT}}",
     "handler": {
         "type": "Chain",
         "config": {

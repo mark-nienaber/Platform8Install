@@ -62,6 +62,45 @@ function prepare_keys() {
 }
 
 # -----------------------------------------------------------------------------
+# Function: replace_placeholders
+# Description: Replace placeholders in configuration files with actual values
+# -----------------------------------------------------------------------------
+function replace_placeholders() {
+    local file="$1"
+    info "Replacing placeholders in $(basename "$file")"
+    
+    # Check if file exists and is writable
+    if [[ ! -f "$file" ]]; then
+        error "File not found: $file"
+        return 1
+    fi
+    
+    if [[ ! -w "$file" ]]; then
+        error "File not writable: $file"
+        return 1
+    fi
+    
+    # Replace IG-specific placeholders
+    sed -i "s|{{IG_KEY_DIR}}|${IG_KEY_DIR:-}|g" "$file" || { error "Failed to replace IG_KEY_DIR in $file"; return 1; }
+    sed -i "s|{{IG_KEYSTORE_FILE}}|${IG_KEYSTORE_FILE:-}|g" "$file" || { error "Failed to replace IG_KEYSTORE_FILE in $file"; return 1; }
+    sed -i "s|\"{{IG_HTTP_PORT}}\"|${IG_HTTP_PORT:-7080}|g" "$file" || { error "Failed to replace quoted IG_HTTP_PORT in $file"; return 1; }
+    sed -i "s|\"{{IG_HTTPS_PORT}}\"|${IG_HTTPS_PORT:-9443}|g" "$file" || { error "Failed to replace quoted IG_HTTPS_PORT in $file"; return 1; }
+    sed -i "s|{{IG_HTTP_PORT}}|${IG_HTTP_PORT:-7080}|g" "$file" || { error "Failed to replace IG_HTTP_PORT in $file"; return 1; }
+    sed -i "s|{{IG_HTTPS_PORT}}|${IG_HTTPS_PORT:-9443}|g" "$file" || { error "Failed to replace IG_HTTPS_PORT in $file"; return 1; }
+    
+    # Replace hostname placeholders
+    sed -i "s|{{AM_HOSTNAME}}|${AM_HOSTNAME:-am.example.com}|g" "$file" || { error "Failed to replace AM_HOSTNAME in $file"; return 1; }
+    sed -i "s|{{IDM_HOSTNAME}}|${IDM_HOSTNAME:-openidm.example.com}|g" "$file" || { error "Failed to replace IDM_HOSTNAME in $file"; return 1; }
+    sed -i "s|{{PLATFORM_HOSTNAME}}|${PLATFORM_HOSTNAME:-platform.example.com}|g" "$file" || { error "Failed to replace PLATFORM_HOSTNAME in $file"; return 1; }
+    
+    # Replace port placeholders
+    sed -i "s|{{TOMCAT_HTTP_PORT}}|${TOMCAT_HTTP_PORT:-8081}|g" "$file" || { error "Failed to replace TOMCAT_HTTP_PORT in $file"; return 1; }
+    sed -i "s|{{IDM_HTTP_PORT}}|${BOOT_PORT_HTTP:-8080}|g" "$file" || { error "Failed to replace IDM_HTTP_PORT in $file"; return 1; }
+    
+    success "Placeholders replaced in $(basename "$file")"
+}
+
+# -----------------------------------------------------------------------------
 # Function: copy_ig_files
 # Description: Copy config, admin, logback, and all route files from script dir
 # -----------------------------------------------------------------------------
@@ -73,6 +112,11 @@ function copy_ig_files() {
 
     info "Copying admin.json"
     cp "${src_dir}/admin.json" "${IG_CONFIG}/" && success "admin.json copied" || warning "admin.json not found or failed"
+    
+    # Replace placeholders in admin.json
+    if [[ -f "${IG_CONFIG}/admin.json" ]]; then
+        replace_placeholders "${IG_CONFIG}/admin.json"
+    fi
 
     info "Copying logback.xml"
     cp "${src_dir}/logback.xml" "${IG_CONFIG}/" && success "logback.xml copied" || warning "logback.xml not found or failed"
@@ -84,6 +128,11 @@ function copy_ig_files() {
         if [[ -f "$file" ]]; then
             local name=$(basename "$file")
             cp "$file" "${IG_ROUTES}/" && success "${name} copied" || warning "Failed to copy ${name}"
+            
+            # Replace placeholders in route files
+            if [[ -f "${IG_ROUTES}/${name}" ]]; then
+                replace_placeholders "${IG_ROUTES}/${name}"
+            fi
         fi
     done
     shopt -u nullglob

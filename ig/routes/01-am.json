@@ -1,6 +1,6 @@
 {
   "name": "am",
-  "baseURI": "http://am.example.com:8081",
+  "baseURI": "http://{{AM_HOSTNAME}}:{{TOMCAT_HTTP_PORT}}",
   "condition": "${find(request.uri.path, '(?:^/am(?!/XUI))')}",
   "handler": {
     "type": "Chain",
@@ -10,7 +10,7 @@
           "comment": "Always redirect to IG rather than AM",
           "type": "LocationHeaderFilter",
           "config": {
-            "baseURI": "https://platform.example.com:9443/"
+            "baseURI": "https://{{PLATFORM_HOSTNAME}}:{{IG_HTTPS_PORT}}/"
           }
         }
       ],

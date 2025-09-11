@@ -1,7 +1,7 @@
 {
     "name": "login",
     "condition": "${find(request.uri.path, '^/enduser-login|^/platform-login')}",
-    "baseURI": "http://am.example.com:8081",
+    "baseURI": "http://{{AM_HOSTNAME}}:{{TOMCAT_HTTP_PORT}}",
     "handler": {
         "type": "Chain",
         "config": {

@@ -183,8 +183,6 @@ function start_idm() {
     if [ -f "$logf" ]; then
         info "Displaying last 50 lines of IDM log"
         tail -n 50 "$logf"
-    else
-        error "IDM log not found: $logf"
     fi
     success "IDM startup initiated"
 }

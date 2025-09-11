@@ -366,88 +366,42 @@ EOF
 function configure_firewall() {
     info "Configuring firewall for Platform 8 services..."
     
-    # Platform 8 ports that need to be accessible
-    local ports=(
-        "$TOMCAT_HTTP_PORT"                    # Tomcat/AM HTTP
-        "$DS_IDREPO_SERVER_LDAP_PORT"         # DS IDRepo LDAP
-        "$DS_IDREPO_SERVER_LDAPS_PORT"        # DS IDRepo LDAPS
-        "$DS_IDREPO_SERVER_HTTP_PORT"         # DS IDRepo HTTP
-        "$DS_IDREPO_SERVER_HTTPS_PORT"        # DS IDRepo HTTPS
-        "$DS_AMCONFIG_SERVER_LDAP_PORT"       # DS AMConfig LDAP
-        "$DS_AMCONFIG_SERVER_LDAPS_PORT"      # DS AMConfig LDAPS
-        "$DS_AMCONFIG_SERVER_HTTP_PORT"       # DS AMConfig HTTP
-        "$DS_AMCONFIG_SERVER_HTTPS_PORT"      # DS AMConfig HTTPS
-        "$DS_CTS_SERVER_LDAP_PORT"            # DS CTS LDAP
-        "$DS_CTS_SERVER_LDAPS_PORT"           # DS CTS LDAPS
-        "$DS_CTS_SERVER_HTTP_PORT"            # DS CTS HTTP
-        "$DS_CTS_SERVER_HTTPS_PORT"           # DS CTS HTTPS
-        "$IG_HTTP_PORT"                       # Identity Gateway HTTP
-        "$IG_HTTPS_PORT"                      # Identity Gateway HTTPS
-        "8080"                                # IDM HTTP
-        "8553"                                # IDM HTTPS
-        "9444"                                # IDM Mutual Auth
-    )
-    
     if command -v firewall-cmd &> /dev/null; then
-        info "Configuring firewalld (RHEL/CentOS/Fedora)..."
+        info "Disabling firewalld (RHEL/CentOS/Fedora)..."
         
-        for port in "${ports[@]}"; do
-            if [[ -n "$port" ]]; then
-                sudo firewall-cmd --permanent --add-port="${port}/tcp" 2>/dev/null && \
-                    info "Opened port: $port/tcp" || \
-                    warning "Failed to open port: $port/tcp"
-            fi
-        done
+        # Stop and disable firewalld
+        sudo systemctl stop firewalld 2>/dev/null && \
+            info "Stopped firewalld service" || \
+            warning "Failed to stop firewalld service"
+            
+        sudo systemctl disable firewalld 2>/dev/null && \
+            info "Disabled firewalld service" || \
+            warning "Failed to disable firewalld service"
         
-        # Reload firewall rules
-        sudo firewall-cmd --reload 2>/dev/null && \
-            success "Firewall rules reloaded successfully" || \
-            warning "Failed to reload firewall rules"
-        
-        # Verify which ports are actually open
-        info "Verifying firewall configuration..."
-        local open_ports=$(sudo firewall-cmd --list-ports 2>/dev/null)
-        if [[ -n "$open_ports" ]]; then
-            success "Currently open firewall ports:"
-            for port in $open_ports; do
-                info "  ✓ $port"
-            done
-        fi
+        success "Firewalld has been disabled"
         
     elif command -v ufw &> /dev/null; then
-        info "Configuring UFW (Ubuntu/Debian)..."
+        info "Disabling UFW (Ubuntu/Debian)..."
         
-        for port in "${ports[@]}"; do
-            if [[ -n "$port" ]]; then
-                sudo ufw allow "${port}/tcp" 2>/dev/null && \
-                    info "Opened port: $port/tcp" || \
-                    warning "Failed to open port: $port/tcp"
-            fi
-        done
+        # Disable UFW
+        sudo ufw --force disable 2>/dev/null && \
+            success "UFW has been disabled" || \
+            warning "Failed to disable UFW"
         
-        # Verify UFW status
-        info "Verifying UFW configuration..."
+        # Verify UFW is disabled
         local ufw_status=$(sudo ufw status 2>/dev/null)
-        if [[ "$ufw_status" =~ "Status: active" ]]; then
-            success "UFW is active with rules configured"
-            echo "$ufw_status" | grep -E "^\d+/tcp" | while read line; do
-                info "  ✓ $line"
-            done
+        if [[ "$ufw_status" =~ "Status: inactive" ]]; then
+            success "UFW is now inactive"
         else
-            warning "UFW may not be active"
+            warning "UFW status unclear: $ufw_status"
         fi
         
     else
         warning "No supported firewall found (firewalld/ufw)"
-        info "Manual firewall configuration may be required for ports:"
-        for port in "${ports[@]}"; do
-            if [[ -n "$port" ]]; then
-                info "  - Port: $port/tcp"
-            fi
-        done
+        info "No firewall changes needed"
     fi
     
-    success "Firewall configuration completed"
+    success "Firewall configuration completed - firewall is now disabled"
 }
 
 # -----------------------------------------------------------------------------
@@ -527,19 +481,13 @@ function install_prerequisites() {
         error "No supported package manager found (apt, dnf, yum, zypper, pacman)"
     fi
     
-    # Configure firewall service based on distribution
+    # Note: Firewall will be disabled in configure_firewall function
     if command -v firewall-cmd &> /dev/null; then
-        # firewalld (RHEL/CentOS/Fedora)
-        sudo systemctl enable firewalld 2>/dev/null || true
-        sudo systemctl start firewalld 2>/dev/null || true
-        info "Using firewalld for firewall management"
+        info "firewalld detected - will be disabled later for Platform 8"
     elif command -v ufw &> /dev/null; then
-        # UFW (Ubuntu/Debian)
-        sudo systemctl enable ufw 2>/dev/null || true
-        sudo ufw --force enable 2>/dev/null || true
-        info "Using ufw for firewall management"
+        info "UFW detected - will be disabled later for Platform 8"
     else
-        warning "No supported firewall found (firewalld/ufw)"
+        info "No supported firewall found (firewalld/ufw)"
     fi
     
     success "System prerequisites installed"
@@ -719,13 +667,17 @@ function setup_prerequisites() {
     info "  - Tomcat configured to run on port: $TOMCAT_HTTP_PORT"
     info "  - Systemd service created: tomcat.service"
     info "  - Hosts file updated with Platform 8 hostnames"
-    info "  - Firewall configured and enabled"
+    info "  - Firewall disabled for Platform 8"
     info "  - JAVA_HOME set globally for all users"
     info "  - Install user granted sudo privileges"
     echo ""
-    info "System is ready for Platform 8 installation!"
-    info "Next steps:"
-    info "  - Run Platform 8 installation: ./bin/install_platform8.sh"
+    success "Operating System is now ready for Platform 8 installation!"
+    echo ""
+    info "🚀 NEXT STEP: Install Platform 8 components"
+    info "   Run the following command to install Platform 8:"
+    info "   ./bin/install_platform8.sh"
+    echo ""
+    info "📊 System monitoring:"
     info "  - Check Tomcat status: sudo systemctl status tomcat"
     info "  - View logs: sudo journalctl -u tomcat -f"
     info "  - Access Tomcat: http://localhost:$TOMCAT_HTTP_PORT"
@@ -797,14 +749,17 @@ function setup_and_install_platform() {
 # Command line interface
 # -----------------------------------------------------------------------------
 function show_usage() {
-    echo "Platform 8 Prerequisites Setup Script"
+    echo "Platform 8 Operating System Prerequisites Setup Script"
     echo "Usage: $0 [command]"
+    echo ""
+    echo "PURPOSE:"
+    echo "  This script prepares your operating system for Platform 8 installation by"
+    echo "  setting up prerequisites like JDK 21, Tomcat 10, users, directories, and"
+    echo "  system configuration. It does NOT install Platform 8 components."
     echo ""
     echo "Commands:"
     echo "  all           - Setup all Platform 8 prerequisites (default)"
     echo "  prerequisites - Setup all Platform 8 prerequisites"
-    echo "  full-install  - Setup prerequisites AND run Platform 8 installation as $INSTALL_USER"
-    echo "  install-only  - Run Platform 8 installation as $INSTALL_USER (prerequisites must be done first)"
     echo "  hosts         - Update hosts file only"
     echo "  jdk           - Install JDK 21 only"
     echo "  tomcat        - Install Tomcat 10 only"
@@ -812,8 +767,11 @@ function show_usage() {
     echo "  test          - Test Tomcat installation"
     echo "  help          - Show this help message"
     echo ""
-    echo "Note: The 'full-install' command will create the '$INSTALL_USER' user with admin privileges"
-    echo "      and run the complete Platform 8 installation as that user."
+    echo "AFTER RUNNING THIS SCRIPT:"
+    echo "  Run './bin/install_platform8.sh' to install Platform 8 components"
+    echo ""
+    echo "NOTE: This script creates the '$INSTALL_USER' user with admin privileges"
+    echo "      for running the Platform 8 installation."
 }
 
 # -----------------------------------------------------------------------------
@@ -822,12 +780,6 @@ function show_usage() {
 case "${1:-all}" in
     all|prerequisites)
         setup_prerequisites
-        ;;
-    full-install)
-        setup_and_install_platform
-        ;;
-    install-only)
-        run_platform_installation
         ;;
     hosts)
         update_hosts_file
