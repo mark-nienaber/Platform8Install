@@ -94,9 +94,9 @@ function install_jdk21() {
         # apt-get update already run in install_prerequisites
         sudo apt-get install -y openjdk-21-jdk openjdk-21-jre-headless
     elif command -v dnf &> /dev/null; then
-        info "Installing OpenJDK 21 via dnf (Fedora/RHEL 8+)"
+        info "Installing Amazon Corretto 21 via dnf (Fedora/RHEL 8+/Amazon Linux)"
         # dnf update already run in install_prerequisites
-        sudo dnf install -y java-21-openjdk java-21-openjdk-devel
+        sudo dnf install -y java-21-amazon-corretto-devel
     elif command -v yum &> /dev/null; then
         info "Installing OpenJDK 21 via yum (RHEL/CentOS 7)"
         # yum update already run in install_prerequisites
@@ -438,7 +438,7 @@ function install_prerequisites() {
     elif command -v dnf &> /dev/null; then
         info "Using dnf package manager (Fedora/RHEL 8+)"
         sudo dnf update -y
-        sudo dnf install -y \
+        sudo dnf install -y --allowerasing \
             wget curl tar gzip unzip \
             net-tools lsof \
             openssl openssl-devel \
