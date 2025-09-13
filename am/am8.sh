@@ -67,6 +67,26 @@ function clear_am() {
     info "Deploying new AM WAR..."
     cp "${AM_WAR}" "${TOMCAT_WEBAPPS_DIR}/${AM_CONTEXT}.war" && success "New AM WAR copied to webapps." || error "Failed to copy AM WAR"
 
+    # Verify file copy completed successfully by comparing file sizes
+    info "Verifying WAR file copy completed successfully..."
+    local source_size=$(stat -f%z "${AM_WAR}" 2>/dev/null || stat -c%s "${AM_WAR}" 2>/dev/null)
+    local dest_size=$(stat -f%z "${TOMCAT_WEBAPPS_DIR}/${AM_CONTEXT}.war" 2>/dev/null || stat -c%s "${TOMCAT_WEBAPPS_DIR}/${AM_CONTEXT}.war" 2>/dev/null)
+    
+    local retry_count=0
+    while [[ "$source_size" != "$dest_size" && $retry_count -lt 30 ]]; do
+        info "WAR file copy in progress... source: ${source_size} bytes, dest: ${dest_size} bytes (attempt $((retry_count + 1))/30)"
+        sleep 2
+        dest_size=$(stat -f%z "${TOMCAT_WEBAPPS_DIR}/${AM_CONTEXT}.war" 2>/dev/null || stat -c%s "${TOMCAT_WEBAPPS_DIR}/${AM_CONTEXT}.war" 2>/dev/null)
+        ((retry_count++))
+    done
+    
+    if [[ "$source_size" == "$dest_size" ]]; then
+        success "WAR file copy verified - file sizes match (${source_size} bytes)"
+    else
+        error "WAR file copy verification failed - source: ${source_size} bytes, dest: ${dest_size} bytes"
+        return 1
+    fi
+
     info "Waiting for AM to deploy..."
     sleep 20
     success "AM deployment delay complete."

@@ -188,6 +188,15 @@ echo
 
 info "────────── 📂 STEP 3: Configure DS ──────────"
 configure_ds && success "✅ Step 3 complete: DS configured"
+
+# Warning: Configuring disk thresholds for low hard disk development environments
+info "Configuring disk thresholds for development environments..."
+if [[ -x "./ds/configure_disk_thresholds.sh" ]]; then
+    ./ds/configure_disk_thresholds.sh || warning "Disk threshold configuration had issues but continuing..."
+    success "✅ Disk thresholds configured for development environments"
+else
+    warning "Disk threshold script not found at ./ds/configure_disk_thresholds.sh - skipping"
+fi
 echo
 
 info "────────── ⚙️ STEP 4: Deploy AM ──────────"

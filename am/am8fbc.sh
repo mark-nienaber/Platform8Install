@@ -175,6 +175,26 @@ function deploy_amfbc() {
     
     success "AM WAR copied to webapps"
     
+    # Verify file copy completed successfully by comparing file sizes
+    info "Verifying WAR file copy completed successfully..."
+    local source_size=$(stat -f%z "${AM_WAR}" 2>/dev/null || stat -c%s "${AM_WAR}" 2>/dev/null)
+    local dest_size=$(stat -f%z "${TOMCAT_WEBAPPS_DIR}/${AM_CONTEXT}.war" 2>/dev/null || stat -c%s "${TOMCAT_WEBAPPS_DIR}/${AM_CONTEXT}.war" 2>/dev/null)
+    
+    local retry_count=0
+    while [[ "$source_size" != "$dest_size" && $retry_count -lt 30 ]]; do
+        info "WAR file copy in progress... source: ${source_size} bytes, dest: ${dest_size} bytes (attempt $((retry_count + 1))/30)"
+        sleep 2
+        dest_size=$(stat -f%z "${TOMCAT_WEBAPPS_DIR}/${AM_CONTEXT}.war" 2>/dev/null || stat -c%s "${TOMCAT_WEBAPPS_DIR}/${AM_CONTEXT}.war" 2>/dev/null)
+        ((retry_count++))
+    done
+    
+    if [[ "$source_size" == "$dest_size" ]]; then
+        success "WAR file copy verified - file sizes match (${source_size} bytes)"
+    else
+        error "WAR file copy verification failed - source: ${source_size} bytes, dest: ${dest_size} bytes"
+        return 1
+    fi
+    
     # Monitor deployment
     info "Monitoring AM deployment..."
     local max_wait=120
