@@ -8,7 +8,7 @@ set -euo pipefail
 # Usage: ./platform8-setup.sh
 ################################################################################
 
-# Load configuration
+# Load configuration (when run as misc/platform8-setup.sh from root directory)
 source ./platformconfig.env
 
 # Security: Disable bash history to prevent password exposure in command history
@@ -27,7 +27,7 @@ function error()   { echo -e "[$(date '+%Y-%m-%d %H:%M:%S')] \033[1;31m[✖]\033
 # Configuration variables
 # -----------------------------------------------------------------------------
 JDK_VERSION="21"
-TOMCAT_VERSION="10.1.44"
+# TOMCAT_VERSION is now defined in platformconfig.env
 TOMCAT_URL="https://dlcdn.apache.org/tomcat/tomcat-10/v${TOMCAT_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz"
 TOMCAT_ARCHIVE="apache-tomcat-${TOMCAT_VERSION}.tar.gz"
 TEMP_DIR="/tmp/platform8-setup"
